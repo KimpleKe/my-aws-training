@@ -1,0 +1,246 @@
+#!/bin/bash
+#
+# A horrible hacky little script to clean out an account
+#
+# Some of these steps take a while (like disabling cloudfront distributions)
+# I recommend that you run this on an EC2 instance with "admin" rights, 
+# especially if you use federated identities, because those creds might
+# expire while the script is running. Because EC2 instances are killed last,
+# the script will commit hara-kiri for you, and you might then have to run it
+# one last time from the command line to clean up remaining EC2 regions
+
+# S3 buckets that we should not muck with
+S3_BUCKETS_KEEP='www.realestate.com.au|errorpages.awstraining.realestate.com.au|rea-training-data|fortunate-trilobite|pki.awstraining.realestate.com.au'
+
+# A complete list of the AWS regions where your credentials work
+AWS_REGIONS=$( aws ec2 describe-regions --query 'Regions[].RegionName' --output text )
+
+# How long to wait for cloudformation stacks to delete before complaining
+CFN_CLEANUP_TIMEOUT=300
+
+# ===============================================================
+
+clean_s3 () {
+    echo "CLEANING S3 Buckets"
+
+    for bucket in $( aws s3 ls | awk '{ print $3 }' | egrep -v "$S3_BUCKETS_KEEP" ); do
+        echo -e "\tCLEANING $bucket"
+        # First remove all objects and versions
+        aws s3api list-object-versions \
+                --bucket "$bucket" \
+                --query '*[].[Key, VersionId]' \
+                --output text |
+            while read key version; do
+                aws s3api delete-object \
+                    --bucket "$bucket" \
+                    --key "$key" \
+                    --version-id "$version"
+            done
+        aws s3 rb s3://$bucket
+    done
+}
+
+# ----------------------------------------------------------------------------------------------
+
+clean_cloudformation () {
+    local region=$1
+    echo "CLEANING CloudFormation stacks in $region"
+
+    local RUNNING_STACKS_FILTER="CREATE_IN_PROGRESS CREATE_FAILED CREATE_COMPLETE ROLLBACK_IN_PROGRESS ROLLBACK_FAILED ROLLBACK_COMPLETE UPDATE_IN_PROGRESS UPDATE_COMPLETE_CLEANUP_IN_PROGRESS UPDATE_COMPLETE UPDATE_ROLLBACK_IN_PROGRESS UPDATE_ROLLBACK_FAILED UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS UPDATE_ROLLBACK_COMPLETE"
+
+    stacks=$( aws --region $region cloudformation list-stacks \
+                  --stack-status-filter $RUNNING_STACKS_FILTER \
+                  --query 'StackSummaries[].StackName' )
+    for stack in $stacks; do
+        echo -e "\tCLEANING stack $stack in $region"
+        aws --region $region cloudformation delete-stack --stack-name $stack
+    done
+
+    # Wait until all stacks are gone, or some kind of timeout happens
+    NOW=$( date +%s )
+    THEN=$(( NOW + CFN_CLEANUP_TIMEOUT ))
+    STACK_COUNT=$( echo $stacks | wc -w )
+    [ $STACK_COUNT -eq 0 ] && return
+    echo -en "\t\tWaiting for stacks to delete in $region: "
+    while [ $NOW -lt $THEN -a $STACK_COUNT -gt 0 ]; do
+        sleep 5
+        echo -n "."
+        NOW=$( date +%s )
+        STACK_COUNT=$( aws --region $region cloudformation list-stacks \
+                           --stack-status-filter $RUNNING_STACKS_FILTER \
+                           --query 'StackSummaries[].StackName' | wc -w )
+    done
+    if [ $NOW -gt $THEN -a $STACK_COUNT -gt 0 ]; then
+        echo "FAILED: timeout waiting for stacks to delete"
+        exit 1
+    else
+        echo "done"
+    fi
+}
+
+# ----------------------------------------------------------------------------------------------
+
+clean_ec2_instances () {
+    local region=$1
+    echo "CLEANING EC2 instances in $region"
+
+    for instance in $( aws --region $region ec2 describe-instances \
+                           --query 'Reservations[].Instances[].InstanceId' \
+                           --output text ); do
+        echo -e "\tinstance $instance"
+        aws --region $region ec2 terminate-instances \
+            --instance-ids $instance
+    done
+}
+
+clean_ec2_elastic_ips () {
+    local region=$1
+    echo "CLEANING elastic IPs in $region"
+    aws --region $region ec2 describe-addresses \
+                          --query 'Addresses[].[Domain, AllocationId, PublicIp]' \
+                          --output text \
+        | while read type alloc ip; do
+            echo -e "\tRELEASING address $ip"
+            case $type in
+                vpc)
+                    aws --region $region ec2 release-address \
+                        --allocation-id $alloc ;;
+                standard)
+                    aws --region $region ec2 release-address \
+                        --public-ip $ip ;;
+                *)
+                    echo "I don't know about elastic IPs of type $type"
+                    exit 1
+                    ;;
+            esac
+        done
+}
+
+clean_ec2_security_groups () {
+    local region=$1
+    echo "CLEANING security groups in $region"
+    aws --region $region ec2 describe-security-groups \
+        --query 'SecurityGroups[?GroupName!=`default`].[GroupId,GroupName]' \
+        --output text \
+    | while read group rest; do
+        echo -e "\tDELETING security group $group ($rest)"
+        aws --region $region ec2 delete-security-group --group-id $group
+    done
+}
+
+clean_ec2_keypairs () {
+    local region=$1
+    echo "CLEANING EC2 keypairs in $region"
+    for keypair in $( aws --region $region ec2 describe-key-pairs \
+                          --query 'KeyPairs[].KeyName' \
+                          --output text ); do
+        echo -e "\tDELETING keypair $keypair"
+        aws --region $region ec2 delete-key-pair --key-name $keypair
+    done
+}
+
+clean_ec2_volumes () {
+    local region=$1
+    echo "CLEANING EC2 volumes in $region"
+    for volume in $( aws --region $region ec2 describe-volumes \
+                         --query 'Volumes[].VolumeId' \
+                         --output text ); do
+        echo -e "\tDELETING volume $volume"
+        aws --region $region ec2 delete-volume --volume-id $volume
+    done
+}
+
+clean_ec2 () {
+    local region=$1
+    clean_ec2_instances $region
+    clean_ec2_elastic_ips $region
+    clean_ec2_security_groups $region
+    clean_ec2_keypairs $region
+    clean_ec2_volumes $region
+}
+
+# ----------------------------------------------------------------------------------------------
+
+clean_route53_health_checks () {
+    for check in $( aws route53 list-health-checks \
+                        --query 'HealthChecks[].Id' \
+                        --output text ); do
+        echo -e "\tDELETING health check $check"
+        aws route53 delete-health-check --health-check-id $check
+    done
+}
+
+clean_route53 () {
+        echo "CLEANING Route53"
+        clean_route53_health_checks
+        # bash is not the right tool to use when cleaning a hosted
+        # zone
+}
+
+# ----------------------------------------------------------------------------------------------
+
+clean_cloudfront () {
+    local region=$1
+    # Need the preview option for the moment
+    if ! aws configure get preview.cloudfront | grep -q true; then
+        echo "Turning on preview capability for awscli with cloudfront"
+        aws configure set preview.cloudfront true
+    fi
+
+    echo "CLEANING cloudfront"
+
+    for dist in $( aws cloudfront list-distributions \
+                       --query 'DistributionList.Items[].Id' \
+                       --output text | grep -v None ); do
+        echo -e "\tDISABLING distribution $dist"
+        local TMPFILE=$( mktemp )
+        aws cloudfront get-distribution \
+                    --id $dist > $TMPFILE
+        local ETAG=$( jq -r .ETag $TMPFILE )
+        jq '.Distribution.DistributionConfig | .Enabled = false' $TMPFILE > ${TMPFILE}.new
+        local TMPFILE2=$( mktemp )
+        # This emits a new config with a new etag
+        aws cloudfront update-distribution \
+            --id $dist \
+            --if-match $ETAG \
+            --distribution-config file://${TMPFILE}.new > $TMPFILE2
+        local ETAG2=$( jq -r .ETag $TMPFILE2 )
+        local STATUS=$( aws cloudfront get-distribution \
+                            --id $dist \
+                            --query Distribution.Status \
+                            --output text )
+        echo -en "\tWaiting for distribution $dist to be disabled (this could take a while)\n\t"
+        while [ $STATUS = "InProgress" ]; do
+            echo -n "."
+            sleep 10
+            STATUS=$( aws cloudfront get-distribution \
+                          --id $dist \
+                          --query Distribution.Status \
+                          --output text )
+        done
+        echo
+        echo -e "\tDistribution is disabled, deleting now"
+        aws cloudfront delete-distribution \
+            --id $dist \
+            --if-match $ETAG2
+    done
+}
+
+# ===============================================================
+
+if [ $# -ge 1 ]; then
+    AWS_REGIONS=$@
+    echo "Cleaning ONLY in region $AWS_REGIONS"
+    echo "SKIPPING global services"
+else
+    # Global services
+    clean_s3
+    clean_route53
+    clean_cloudfront
+fi
+
+# Regional services
+for region in $AWS_REGIONS; do
+    clean_cloudformation $region
+    clean_ec2 $region
+done

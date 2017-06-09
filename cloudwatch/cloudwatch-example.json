@@ -1,0 +1,106 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+
+  "Description": "AWS CloudFormation Example Template: Create a t2.micro EC2 instance with CloudWatch Logs agent running",
+
+  "Mappings": {
+    "AWSRegionArch2AMI": {
+      "us-east-1":      { "AMI": "ami-7c807d14" },
+      "us-west-1":      { "AMI": "ami-a8d3d4ed" },
+      "us-west-2":      { "AMI": "ami-1b3b462b" },
+      "eu-west-1":      { "AMI": "ami-672ce210" },
+      "ap-northeast-1": { "AMI": "ami-25dd9324" },
+      "ap-southeast-1": { "AMI": "ami-56b7eb04" },
+      "ap-southeast-2": { "AMI": "ami-d50773ef" },
+      "sa-east-1":      { "AMI": "ami-c7e649da" }
+    }
+  },
+
+  "Resources": {
+    "InstanceRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": { "Service": [ "ec2.amazonaws.com" ] },
+              "Action": [ "sts:AssumeRole" ]
+            }
+          ]
+        },
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyName": "cloudwatch-example-policy",
+            "PolicyDocument": {
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [ "logs:*" ],
+                  "Resource": [ "arn:aws:logs:*:*:*" ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    "InstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Path": "/",
+        "Roles": [ { "Ref": "InstanceRole" } ]
+      }
+    },
+
+    "MyInstance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "ImageId": {
+          "Fn::FindInMap": [
+            "AWSRegionArch2AMI", { "Ref": "AWS::Region" }, "AMI"
+          ]
+        },
+        "IamInstanceProfile": { "Ref": "InstanceProfile" },
+        "InstanceType": "t2.micro",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": { "Ref": "AWS::StackName" }
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "yum install -y awslogs\n",
+                "cat > /etc/awslogs/awscli.conf <<EoCONF\n",
+                "[plugins]\n",
+                "cwlogs = cwlogs\n",
+                "[default]\n",
+                "region = ap-southeast-2\n",
+                "EoCONF\n",
+                "cat > /etc/awslogs/awslogs.conf <<EoM\n",
+                "[general]\n",
+                "state_file = /var/tmp/awslogs-state\n",
+                "\n",
+                "[/var/log/secure]\n",
+                "file = /var/log/secure\n",
+                "log_group_name = /var/log/secure\n",
+                "log_stream_name = {instance_id}\n",
+                "datetime_format = %b %d %H:%M:%S\n",
+                "EoM\n",
+                "service awslogs start\n",
+                "chkconfig awslogs on\n"
+              ]
+            ]
+          }
+        }
+      }
+    }
+  }
+}

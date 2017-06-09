@@ -1,0 +1,87 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Creates a Lambda function to get images from a bucket, and put a resized image to another bucket",
+
+  "Parameters": {
+    "ImageBucketName":{
+      "Type": "String",
+      "Default": "mah-pix-bucket"
+    }
+  },
+
+  "Resources": {
+    "LambdaExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Action": [ "sts:AssumeRole" ],
+              "Effect": "Allow",
+              "Principal": { "Service": [ "lambda.amazonaws.com" ] }
+            }
+          ]
+        },
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyName": "PermitLambdaExec",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "PermitS3",
+                  "Action": [
+                    "s3:GetObject",
+                    "s3:PutObject"
+                  ],
+                  "Effect": "Allow",
+                  "Resource": "arn:aws:s3:::*"
+                },
+                {
+                  "Sid": "PermitLogs",
+                  "Action": [
+                    "logs:*"
+                  ],
+                  "Effect": "Allow",
+                  "Resource": "arn:aws:logs:*:*:*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    "ResizeImage": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": "mah-lambdas-us-west-2",
+          "S3Key": "CreateThumbnail.zip"
+        },
+        "Description": "Run when the API is GET",
+        "Handler": "index.handler",
+        "MemorySize": "1024",
+        "Role": { "Fn::GetAtt": [ "LambdaExecutionRole", "Arn" ] },
+        "Runtime": "nodejs",
+        "Timeout": "10"
+      }
+    },
+
+    "ImageBucket" : {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "BucketName": { "Ref": "ImageBucketName" }
+      }
+    },
+
+    "ImageBucketresized" : {
+      "Type" : "AWS::S3::Bucket",
+      "Properties": {
+        "BucketName": { "Fn::Join": [ "", [ { "Ref": "ImageBucketName" }, "resized" ] ] }
+      }
+    }
+  }
+}

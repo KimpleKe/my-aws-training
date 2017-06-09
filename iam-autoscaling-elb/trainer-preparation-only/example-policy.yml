@@ -1,0 +1,11 @@
+---
+Statement:
+- Sid: PermitStartAndStop
+  Action:
+  - ec2:StartInstances
+  - ec2:StopInstances
+  Effect: Allow
+  Resource: "*"
+  Condition:
+    IpAddress:
+      aws:SourceIp: 203.17.253.249/32

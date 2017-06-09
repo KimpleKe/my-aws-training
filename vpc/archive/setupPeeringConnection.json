@@ -1,0 +1,94 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+
+  "Description": "Set up VPC Peering connection, additional routes, and security group rules",
+
+  "Parameters": {
+    "MyVPCId": {
+      "Type": "String",
+      "Description": "The VPC requesting/initiating Peering connection"
+    },
+
+    "VPCPeerId": {
+      "Type": "String",
+      "Description": "The VPC to Peer with"
+    },
+
+    "PeeringConnectionId": {
+      "Type": "String",
+      "Description": "The ID of an existing peering connection"
+    },
+
+    "MyVPCPublicSubnetACIDR": {
+      "Type": "String",
+      "Description": "Establish Peer connection with CIDR of public subnet of MyVPC"
+    },
+
+    "VPCPeerPublicSubnetACIDR": {
+      "Type": "String",
+      "Description": "Establish Peer connection with CIDR of public subnet to peer with"
+    },
+
+    "MyVPCPublicSubnetARouteTableId": {
+      "Type": "String",
+      "Description": "Route Table id of Public Subnet A of MyVPC"
+    },
+
+    "VPCPeerPublicSubnetARouteTableId": {
+      "Type": "String",
+      "Description": "Route Table id of Public Subnet A of VPC Peer"
+    },
+
+    "MyVPCInstanceSecGrpId": {
+      "Type": "String",
+      "Description": "Instance security group id for MyVPC"
+    },
+
+    "VPCPeerInstanceSecGrpId": {
+      "Type": "String",
+      "Description": "Instance security group id for VPC Peer"
+    }
+  },
+
+  "Resources": {
+    "MyVPCPeeringRoute": {
+      "Type": "AWS::EC2::Route",
+        "Properties": {
+          "DestinationCidrBlock": { "Ref": "VPCPeerPublicSubnetACIDR" },
+          "RouteTableId": { "Ref": "MyVPCPublicSubnetARouteTableId" },
+          "VpcPeeringConnectionId": { "Ref": "PeeringConnectionId" }
+        }
+    },
+
+    "OtherVPCPeeringRoute": {
+      "Type": "AWS::EC2::Route",
+        "Properties": {
+          "DestinationCidrBlock": { "Ref": "MyVPCPublicSubnetACIDR" },
+          "RouteTableId": { "Ref": "VPCPeerPublicSubnetARouteTableId" },
+          "VpcPeeringConnectionId": { "Ref": "PeeringConnectionId" }
+        }
+    },
+
+    "MyVPCSecGrpIngressRuleICMP": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+         "CidrIp" : { "Ref": "VPCPeerPublicSubnetACIDR" },
+         "FromPort" : -1,
+         "ToPort" : -1,
+         "IpProtocol" : "icmp",
+         "GroupId" : { "Ref": "MyVPCInstanceSecGrpId" }
+      }
+    },
+
+    "OtherVPCSecGrpIngressRuleICMP": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+         "CidrIp" : { "Ref": "MyVPCPublicSubnetACIDR" },
+         "FromPort" : -1,
+         "ToPort" : -1,
+         "IpProtocol" : "icmp",
+         "GroupId" : { "Ref": "VPCPeerInstanceSecGrpId" }
+      }
+    }
+  }
+}

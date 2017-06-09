@@ -1,0 +1,90 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Demonstration API Gateway to Lambda function",
+
+  "Parameters": {
+    "SourceBucket": {
+      "Type": "String",
+      "Description": "The S3 bucket (must be in the same region as the Lambda function) where the source zipfile is located"
+    },
+    "SourceKey": {
+      "Type": "String",
+      "Description": "The object in the S3 bucket that contains the zipfile source for the Lambda function"
+    }
+  },
+
+
+  "Resources": {
+
+    "ImageProcessorLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": { "Ref": "SourceBucket" },
+          "S3Key": { "Ref": "SourceKey" }
+        },
+        "Description": "S3 image resizer function",
+        "Handler": "ImageResizer.handler",
+        "Role": { "Fn::GetAtt": ["LambdaExecutionRole", "Arn"]},
+        "Runtime": "nodejs4.3",
+	"Timeout": "30",
+        "Environment": {
+          "Variables": {
+            "bucket_name": {"Ref":  "SourceBucket"}
+          }
+        }
+      }
+    },
+
+    "LambdaExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{
+            "Effect": "Allow",
+            "Principal": { "Service": ["lambda.amazonaws.com"] },
+            "Action": ["sts:AssumeRole"]
+          }]
+        },
+        "ManagedPolicyArns": ["arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"],
+    "Path": "/",
+    "Policies": [
+      {
+      "PolicyName": "PermitS3",
+      "PolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "ReadImagesDir",
+            "Effect": "Allow",
+            "Action": [
+              "s3:Get*"
+            ],
+            "Resource": { "Fn::Join" : [ "", [ "arn:aws:s3:::", {"Ref": "SourceBucket"}, "/images/*" ] ] }
+          },
+          {
+            "Sid": "WriteResizedDir",
+            "Effect": "Allow",
+            "Action": [
+	      "s3:Get*",
+              "s3:PutObject"
+            ],
+            "Resource": { "Fn::Join" : [ "", [ "arn:aws:s3:::", {"Ref": "SourceBucket"}, "/resized/*" ] ] }
+          }
+        ]
+      }
+    }
+
+    ]
+      }
+    }
+  },
+
+  "Outputs": {
+    "ImageProcessorARN": {
+        "Value": {"Fn::GetAtt": ["ImageProcessorLambda", "Arn"]},
+	"Export": { "Name": { "Fn::Join" : [ "-", ["ImageProcessorLambda", {"Ref": "SourceBucket"} ] ] } }
+    }
+  }
+}

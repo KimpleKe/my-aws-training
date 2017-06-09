@@ -1,0 +1,10 @@
+[
+  {
+    "ParameterKey": "EnableAz3",
+    "ParameterValue": "false"
+  },
+  {
+    "ParameterKey": "VpcName",
+    "ParameterValue": "vpc-required-for-training"
+  }
+]

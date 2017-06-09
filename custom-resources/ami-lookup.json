@@ -1,0 +1,48 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+
+  "Description": "An example of the AMI Lookup custom resource",
+
+  "Parameters": {
+    "InstanceType": {
+      "Description": "Example instance types",
+      "Type": "String",
+      "Default": "t1.micro",
+      "AllowedValues": [
+        "t1.micro",
+        "m1.small",
+        "m1.medium",
+        "m1.large"
+      ],
+      "ConstraintDescription": "must be a valid EC2 instance type."
+    },
+    "ServiceToken": {
+      "Description": "ServiceToken of AMI Lookup Custom Resource",
+      "Type": "String",
+      "AllowedPattern": "arn:aws:sns:.*",
+      "ConstraintDescription": "must be an SNS topic ARN"
+    }
+  },
+
+  "Resources": {
+
+    "UbuntuInstance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "ImageId": { "Ref": "UbuntuAmi"},
+        "InstanceType": { "Ref": "InstanceType" }
+      }
+    },
+    "UbuntuAmi": {
+      "Type": "Custom::AmiLookup",
+      "Version": "1.0",
+      "Properties": {
+        "ServiceToken": { "Ref": "ServiceToken" },
+        "os": "ubuntu",
+        "arch": "64"
+      }
+    }
+
+  }
+}
+

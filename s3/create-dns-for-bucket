@@ -1,0 +1,98 @@
+#!/bin/bash
+
+# Seriously?
+# This is from http://docs.aws.amazon.com/general/latest/gr/rande.html#s3_region
+#declare -A S3ZONES
+
+function lookup_zones () {
+	case "$1" in 
+		"s3-website-us-east-1.amazonaws.com")
+			zoneid=Z3AQBSTGFYJSTF;;
+		"s3-website-us-west-2.amazonaws.com")
+			zoneid=Z3BJ6K6RIION7M;;
+		"s3-website-us-west-1.amazonaws.com")
+			zoneid=Z2F56UZL2M1ACD;;
+		"s3-website.eu-central-1.amazonaws.com")
+			zoneid=Z21DNDUVLTQW6Q;;
+		"s3-website-ap-southeast-1.amazonaws.com")
+			zoneid=Z3O0J2DXBE1FTB;;
+		"s3-website-ap-southeast-2.amazonaws.com")
+			zoneid=Z1WCIGYICN2BYD;;
+		"s3-website-ap-northeast-1.amazonaws.com")
+			zoneid=Z2M4EHUR26P7ZW;;
+		"s3-website-sa-east-1.amazonaws.com")
+			zoneid=Z7KQH4QJS55SO;;
+		"s3-website-us-gov-west-1.amazonaws.com")
+			zoneid=Z31GFT0UA1I2HV;;
+	esac
+}
+
+if [ $# -ne 1 ]; then
+    echo "usage: $0 <bucket-name>"
+    exit 1
+fi
+
+BUCKET=$1
+ZONENAME=$( echo $BUCKET | cut -f2- -d. )
+
+ZONEID=$( aws route53 list-hosted-zones-by-name \
+            --dns-name $ZONENAME \
+            --query 'HostedZones[?Name == `awstraining.realestate.com.au.`].{Id: Id}' \
+            --output text \
+        | sed -e 's#/hostedzone/##'
+)
+
+if [ -z "$ZONEID" ]; then
+    echo "ERROR: Can't find a hosted zone with the name $ZONENAME"
+    exit 1
+fi
+
+BUCKETLOCATION=$( aws s3api get-bucket-location \
+                    --bucket $BUCKET \
+                    --output text
+)
+
+BUCKETENDPOINT="s3-website-$BUCKETLOCATION.amazonaws.com"
+lookup_zones $BUCKETENDPOINT
+echo "HostedZoneId for $BUCKETENDPOINT is $zoneid ";
+BUCKETZONEID="$zoneid"
+
+# Somewhere to generate our changeset JSON into
+TMPFILE=$( mktemp )
+cleanup () {
+    rm $TMPFILE
+}
+
+trap cleanup EXIT
+
+cat > $TMPFILE <<EoCS
+{
+    "Comment": "Record for $BUCKET",
+    "Changes": [
+        {
+            "Action": "CREATE",
+            "ResourceRecordSet": {
+                "Name": "${BUCKET}.",
+                "Type": "A",
+                "AliasTarget": {
+                    "HostedZoneId": "$BUCKETZONEID",
+                    "DNSName": "${BUCKETENDPOINT}.",
+                    "EvaluateTargetHealth": false
+                }
+            }
+        }
+    ]
+}
+EoCS
+
+RES=$( aws route53 change-resource-record-sets \
+        --hosted-zone-id $ZONEID \
+        --change-batch file://$TMPFILE
+)
+RET=$?
+if [ $RET -ne 0 ]; then
+    echo "ERROR: $RES"
+    exit $RET
+fi
+
+echo "Done!"

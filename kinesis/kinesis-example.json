@@ -1,0 +1,634 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+
+  "Description": "Creates a Kinesis application which streams from Twitter and visualises the tweets by geolocation",
+
+  "Parameters": {
+    "TwitterConsumerKey": {
+      "Type": "String",
+      "Description": "Twitter's Consumer Key (API Key)",
+      "NoEcho": "true"
+    },
+    "TwitterConsumerSecret": {
+      "Type": "String",
+      "Description": "Twitter's Consumer Secret (API Secret)",
+      "NoEcho": "true"
+    },
+    "TwitterAccessToken": {
+      "Type": "String",
+      "Description": "Twitter's Access Token",
+      "NoEcho": "true"
+    },
+    "TwitterAccessTokenSecret": {
+      "Type": "String",
+      "Description": "Twitter's Access Token Secret",
+      "NoEcho": "true"
+    },
+    "VpcId": {
+      "Type": "AWS::EC2::VPC::Id",
+      "Description": "The Default VPC ID"
+    },
+    "ManagementSSHOrigin": {
+      "Type": "String",
+      "Description": "IP address range from which to allow SSH access",
+      "Default": "203.17.253.249/32"
+    },
+    "SSHKeyPair": {
+      "Type": "AWS::EC2::KeyPair::KeyName"
+    },
+    "DNSDomain": {
+      "Type": "String",
+      "Default": "awstraining.realestate.com.au."
+    }
+  },
+
+  "Mappings": {
+    "Region2AMI": {
+      "ap-southeast-2": { "AMI": "ami-d50773ef" }
+    }
+  },
+
+  "Resources": {
+    "ProducerInstanceSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Permit SSH for management and all other instances in this group on all ports",
+        "VpcId": { "Ref": "VpcId" },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": { "Ref": "ManagementSSHOrigin" }
+          }
+        ]
+      }
+    },
+
+    "ProducerInstanceSGMutualIngress": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": { "Ref": "ProducerInstanceSecurityGroup" },
+        "IpProtocol": "-1",
+        "FromPort": "-1",
+        "ToPort": "-1",
+        "SourceSecurityGroupId": { "Ref": "ProducerInstanceSecurityGroup" }
+      }
+    },
+
+    "KinesisStream": {
+      "Type": "AWS::Kinesis::Stream",
+      "Properties": {
+        "ShardCount": "1"
+      }
+    },
+
+    "CacheCluster": {
+      "Type": "AWS::ElastiCache::CacheCluster",
+      "Properties": {
+        "CacheNodeType": "cache.m3.medium",
+        "Engine": "redis",
+        "NumCacheNodes": "1",
+        "VpcSecurityGroupIds": [
+          { "Fn::GetAtt": [ "ProducerInstanceSecurityGroup", "GroupId" ] }
+        ]
+      }
+    },
+
+    "ProducerInstanceRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "Path": "/",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": { "Service": [ "ec2.amazonaws.com" ] },
+              "Action": [ "sts:AssumeRole" ]
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "KinesisUsePolicy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "kinesis:Put*",
+                    "kinesis:List*",
+                    "kinesis:Wait",
+                    "kinesis:Get*",
+                    "kinesis:Describe*",
+                    "s3:Get*",
+                    "s3:List*"
+                  ],
+                  "Resource": [ "*" ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    "ProducerInstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Path": "/",
+        "Roles": [
+          { "Ref": "ProducerInstanceRole" }
+        ]
+      }
+    },
+
+    "ProducerInstance": {
+      "Type": "AWS::EC2::Instance",
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "config": {
+            "packages": {
+              "yum": {
+                "java-1.8.0-openjdk-devel": [],
+                "git": []
+              }
+            },
+            "sources": {
+              "/home/ec2-user/maven": "http://apache.mirror.digitalpacific.com.au/maven/maven-3/3.3.9/binaries/apache-maven-3.3.9-bin.tar.gz"
+            }
+          }
+        }
+      },
+      "Properties": {
+        "KeyName": { "Ref": "SSHKeyPair" },
+        "ImageId": {
+          "Fn::FindInMap": [
+            "Region2AMI", { "Ref": "AWS::Region" }, "AMI"
+          ]
+        },
+        "InstanceType": "m3.medium",
+        "IamInstanceProfile": { "Ref": "ProducerInstanceProfile" },
+        "SecurityGroupIds": [
+          { "Ref": "ProducerInstanceSecurityGroup" }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  "producer-",
+                  { "Ref": "AWS::StackName" }
+                ]
+              ]
+            }
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "# update the instance\n",
+                "yum update -y\n",
+                "# Install things\n",
+                "/opt/aws/bin/cfn-init --stack ", { "Ref": "AWS::StackName" },
+                  " --resource ProducerInstance",
+                  " --region ", { "Ref": "AWS::Region" }, "\n",
+                "\n",
+                "update-alternatives --set java /usr/lib/jvm/java-1.8.0-openjdk-*/jre/bin/java\n",
+                "\n",
+                "cd /home/ec2-user\n",
+                "\n",
+                "# get the code\n",
+                "git clone https://github.com/nonspecialist/aws-big-data-blog.git\n",
+                "cp ./aws-big-data-blog/aws-blog-kinesis-data-visualization/TwitterProducer/* /home/ec2-user -r\n",
+                "\n",
+                "# create the config file\n",
+                "cat > AwsUserData.properties <<EoM\n",
+                "aws.streamName = ", { "Ref": "KinesisStream" }, "\n",
+                "aws.regionName = ", { "Ref": "AWS::Region" }, "\n",
+                "twitter.consumerKey = ", { "Ref": "TwitterConsumerKey" }, "\n",
+                "twitter.consumerSecret = ", { "Ref": "TwitterConsumerSecret" }, "\n",
+                "twitter.token = ", { "Ref": "TwitterAccessToken" }, "\n",
+                "twitter.secret = ", { "Ref": "TwitterAccessTokenSecret" }, "\n",
+                "twitter.hashtags = \n",
+                "# This is just Australia\n",
+                "# twitter.locations = 112.99,-43.83,153.97,-10.76\n",
+                "# This is The World\n",
+                "twitter.locations = -180,-90,180,90\n",
+                "EoM\n",
+                "\n",
+                "# do the build\n",
+                "/home/ec2-user/maven/apache-maven-*/bin/mvn package\n",
+                "# Run the code\n",
+                "java -jar target/TwitterProducer-0.0.1-SNAPSHOT.jar AwsUserData.properties > producer.log 2>&1\n"
+              ]
+            ]
+          }
+        }
+      }
+    },
+
+    "KinesisInstanceRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "Path": "/",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": { "Service": [ "ec2.amazonaws.com" ] },
+              "Action": [ "sts:AssumeRole" ]
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "KinesisAppPolicy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "kinesis:*",
+                    "s3:Get*",
+                    "s3:List*",
+                    "cloudwatch:*",
+                    "dynamodb:*",
+                    "elasticache:*"
+                  ],
+                  "Resource": [ "*" ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    "KinesisInstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Path": "/",
+        "Roles": [ { "Ref": "KinesisInstanceRole" } ]
+      }
+    },
+
+    "KinesisAppInstance": {
+      "Type": "AWS::EC2::Instance",
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "config": {
+            "packages": {
+              "yum": {
+                "java-1.8.0-openjdk-devel": [],
+                "git": []
+              }
+            },
+            "sources": {
+              "/home/ec2-user/maven": "http://apache.mirror.digitalpacific.com.au/maven/maven-3/3.3.9/binaries/apache-maven-3.3.9-bin.tar.gz"
+            }
+          }
+        }
+      },
+      "Properties": {
+        "KeyName": { "Ref": "SSHKeyPair" },
+        "ImageId": {
+          "Fn::FindInMap": [
+            "Region2AMI", { "Ref": "AWS::Region" }, "AMI"
+          ]
+        },
+        "InstanceType": "m3.medium",
+        "IamInstanceProfile": { "Ref": "KinesisInstanceProfile" },
+        "SecurityGroupIds": [
+          { "Ref": "ProducerInstanceSecurityGroup" }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  "kinesis-app-",
+                  { "Ref": "AWS::StackName" }
+                ]
+              ]
+            }
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "# update the instance\n",
+                "yum update -y\n",
+                "# Install things\n",
+                "/opt/aws/bin/cfn-init --stack ", { "Ref": "AWS::StackName" },
+                  " --resource KinesisAppInstance",
+                  " --region ", { "Ref": "AWS::Region" }, "\n",
+                "\n",
+                "update-alternatives --set java /usr/lib/jvm/java-1.8.0-openjdk-*/jre/bin/java\n",
+                "\n",
+                "cd /home/ec2-user\n",
+                "\n",
+                "# get the code\n",
+                "git clone https://github.com/nonspecialist/aws-big-data-blog.git\n",
+                "cp -r ./aws-big-data-blog/aws-blog-kinesis-data-visualization/KinesisApplication/* /home/ec2-user\n",
+                "\n",
+                "# App name needs to be unique for now\n",
+                "INSTANCE_ID=$( curl http://169.254.169.254/latest/meta-data/instance-id )\n",
+                "# Gah have to find redis endpoint via the API\n",
+                "CLUSTER=$( aws elasticache describe-cache-clusters ",
+                  " --region ", { "Ref": "AWS::Region" },
+                  " --cache-cluster-id ", { "Ref": "CacheCluster" },
+                  " --show-cache-node-info ",
+                  " --query 'CacheClusters[].CacheNodes[].Endpoint' ",
+                  " --output text ",
+                  ")\n",
+                "ENDPOINT=$( echo $CLUSTER | awk '{ print $1 }' )\n",
+                "PORT=$( echo $CLUSTER | awk '{ print $2 }' )\n",
+                "# create the config file\n",
+                "cat > KinesisClient.properties <<EoM\n",
+                "appName = DataVizAnalyzer-$INSTANCE_ID\n",
+                "kinesisEndpoint = ", { "Ref": "AWS::Region" }, "\n",
+                "redisEndpoint = $ENDPOINT\n", 
+                "redisPort = $PORT\n", 
+                "kinesisStreamName = ", { "Ref": "KinesisStream" }, "\n",
+                "EoM\n",
+                "\n",
+                "# do the build\n",
+                "/home/ec2-user/maven/apache-maven-*/bin/mvn package\n",
+                "# Run the code\n",
+                "java -jar target/KinesisClient-0.0.1-SNAPSHOT.jar KinesisClient.properties > client.log 2>&1\n"
+              ]
+            ]
+          }
+        }
+      }
+    },
+
+    "VizInstanceRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "Path": "/",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": { "Service": [ "ec2.amazonaws.com" ] },
+              "Action": [ "sts:AssumeRole" ]
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "VizAppPolicy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "elasticache:*"
+                  ],
+                  "Resource": [ "*" ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    "VizInstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Path": "/",
+        "Roles": [ { "Ref": "VizInstanceRole" } ]
+      }
+    },
+
+    "VizInstanceSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Visualisation instance for tweets",
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "22",
+            "ToPort": "22",
+            "CidrIp": { "Ref": "ManagementSSHOrigin" }
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "3000",
+            "ToPort": "3000",
+            "CidrIp": { "Ref": "ManagementSSHOrigin" }
+          }
+        ],
+        "VpcId": { "Ref": "VpcId" }
+      }
+    },
+
+    "VizInstance": {
+      "Type": "AWS::EC2::Instance",
+      "Metadata": {
+        "AWS::CloudFormation::Init": {
+          "config": {
+            "packages": {
+              "yum": {
+                "npm": [],
+                "git": []
+              }
+            }
+          }
+        }
+      },
+      "Properties": {
+        "KeyName": { "Ref": "SSHKeyPair" },
+        "ImageId": {
+          "Fn::FindInMap": [
+            "Region2AMI", { "Ref": "AWS::Region" }, "AMI"
+          ]
+        },
+        "InstanceType": "m3.medium",
+        "IamInstanceProfile": { "Ref": "VizInstanceProfile" },
+        "SecurityGroupIds": [
+          { "Ref": "ProducerInstanceSecurityGroup" },
+          { "Ref": "VizInstanceSecurityGroup" }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  "viz-",
+                  { "Ref": "AWS::StackName" }
+                ]
+              ]
+            }
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "# update the instance\n",
+                "yum update -y\n",
+                "# Enable EPEL\n",
+                "yum-config-manager --enable epel\n",
+                "# Install things\n",
+                "/opt/aws/bin/cfn-init --stack ", { "Ref": "AWS::StackName" },
+                  " --resource VizInstance",
+                  " --region ", { "Ref": "AWS::Region" }, "\n",
+                "\n",
+                "cd /home/ec2-user\n",
+                "\n",
+                "# get the code\n",
+                "git clone https://github.com/nonspecialist/aws-big-data-blog.git\n",
+                "cp -r ./aws-big-data-blog/aws-blog-kinesis-data-visualization/Globe /home/ec2-user\n",
+                "# Gah have to find redis endpoint via the API\n",
+                "CLUSTER=$( aws elasticache describe-cache-clusters ",
+                  " --region ", { "Ref": "AWS::Region" },
+                  " --cache-cluster-id ", { "Ref": "CacheCluster" },
+                  " --show-cache-node-info ",
+                  " --query 'CacheClusters[].CacheNodes[].Endpoint' ",
+                  " --output text ",
+                  ")\n",
+                "ENDPOINT=$( echo $CLUSTER | awk '{ print $1 }' )\n",
+                "PORT=$( echo $CLUSTER | awk '{ print $2 }' )\n",
+                "\n",
+                "# Need to install some more bits\n",
+                "cd Globe\n",
+                "npm install\n",
+                "npm install indexof\n",
+                "export PARAM1=$ENDPOINT\n",
+                "node server.js > node.log 2>&1\n"
+              ]
+            ]
+          }
+        }
+      }
+    },
+
+    "ProducerInstanceDNS": {
+      "Type": "AWS::Route53::RecordSet",
+      "Properties": {
+        "HostedZoneName": { "Ref": "DNSDomain" },
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              { "Ref": "AWS::StackName" },
+              "-producer",
+              ".",
+              { "Ref": "DNSDomain" }
+            ]
+          ]
+        },
+        "Type": "A",
+        "TTL": "60",
+        "ResourceRecords": [
+          { "Fn::GetAtt": [ "ProducerInstance", "PublicIp" ] }
+        ]
+      }
+    },
+
+    "KinesisAppInstanceDNS": {
+      "Type": "AWS::Route53::RecordSet",
+      "Properties": {
+        "HostedZoneName": { "Ref": "DNSDomain" },
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              { "Ref": "AWS::StackName" },
+              "-kinesis",
+              ".",
+              { "Ref": "DNSDomain" }
+            ]
+          ]
+        },
+        "Type": "A",
+        "TTL": "60",
+        "ResourceRecords": [
+          { "Fn::GetAtt": [ "KinesisAppInstance", "PublicIp" ] }
+        ]
+      }
+    },
+
+    "VizInstanceDNS": {
+      "Type": "AWS::Route53::RecordSet",
+      "Properties": {
+        "HostedZoneName": { "Ref": "DNSDomain" },
+        "Name": {
+          "Fn::Join": [
+            "",
+            [
+              { "Ref": "AWS::StackName" },
+              "-viz",
+              ".",
+              { "Ref": "DNSDomain" }
+            ]
+          ]
+        },
+        "Type": "A",
+        "TTL": "60",
+        "ResourceRecords": [
+          { "Fn::GetAtt": [ "VizInstance", "PublicIp" ] }
+        ]
+      }
+    }
+  },
+
+  "Outputs": {
+    "VizHeatmapEndpoint": {
+      "Description": "The HTTP endpoint for the visualiser",
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "http://",
+            { "Ref": "AWS::StackName" },
+            "-viz",
+            ".",
+            { "Ref": "DNSDomain" },
+            ":3000/heatmap"
+          ]
+        ]
+      }
+    },
+    "VizGlobeEndpoint": {
+      "Description": "The HTTP endpoint for the visualiser",
+      "Value": {
+        "Fn::Join": [
+          "",
+          [
+            "http://",
+            { "Ref": "AWS::StackName" },
+            "-viz",
+            ".",
+            { "Ref": "DNSDomain" },
+            ":3000/globe"
+          ]
+        ]
+      }
+    }
+  }
+}

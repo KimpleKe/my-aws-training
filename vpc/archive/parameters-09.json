@@ -1,0 +1,54 @@
+[
+  {
+    "ParameterKey": "InternalIpBase",
+    "ParameterValue": "10.9.0.0/16"
+  },
+  {
+    "ParameterKey": "PublicSubnetACIDR",
+    "ParameterValue": "10.9.255.0/24"
+  },
+  {
+    "ParameterKey": "PublicSubnetBCIDR",
+    "ParameterValue": "10.9.254.0/24"
+  },
+  {
+    "ParameterKey": "NATSubnetACIDR",
+    "ParameterValue": "10.9.253.0/27"
+  },
+  {
+    "ParameterKey": "NATSubnetBCIDR",
+    "ParameterValue": "10.9.253.128/27"
+  },
+  {
+    "ParameterKey": "PrivateSubnetACIDR",
+    "ParameterValue": "10.9.4.0/22"
+  },
+  {
+    "ParameterKey": "PrivateSubnetBCIDR",
+    "ParameterValue": "10.9.8.0/22"
+  },
+  {
+    "ParameterKey": "SvcsSubnetACIDR",
+    "ParameterValue": "10.9.32.0/24"
+  },
+  {
+    "ParameterKey": "SvcsSubnetBCIDR",
+    "ParameterValue": "10.9.33.0/24"
+  },
+  {
+    "ParameterKey": "ManagementSSHOrigin",
+    "ParameterValue": "0.0.0.0/0"
+  },
+  {
+    "ParameterKey": "DNSDomain",
+    "ParameterValue": "awstraining.realestate.com.au"
+  },
+  {
+    "ParameterKey": "DNSSearchPath",
+    "ParameterValue": "awstraining.realestate.com.au realestate.com.au"
+  },
+  {
+    "ParameterKey": "Identifier",
+    "ParameterValue": "09"
+  }
+]

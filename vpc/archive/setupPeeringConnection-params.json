@@ -1,0 +1,38 @@
+[
+  {
+    "ParameterKey": "MyVPCId",
+    "ParameterValue": "vpc-1e1e457b"
+  },
+  {
+    "ParameterKey": "VPCPeerId",
+    "ParameterValue": "vpc-e41e4581"
+  },
+  {
+    "ParameterKey": "PeeringConnectionId",
+    "ParameterValue": "pcx-c9cc61a0"
+  },
+  {
+    "ParameterKey": "MyVPCPublicSubnetACIDR",
+    "ParameterValue": "10.1.255.0/24"
+  },
+  {
+    "ParameterKey": "VPCPeerPublicSubnetACIDR",
+    "ParameterValue": "10.2.255.0/24"
+  },
+  {
+    "ParameterKey": "MyVPCPublicSubnetARouteTableId",
+    "ParameterValue": "rtb-f18f8d94"
+  },
+  {
+    "ParameterKey": "VPCPeerPublicSubnetARouteTableId",
+    "ParameterValue": "rtb-f88f8d9d"
+  },
+  {
+    "ParameterKey": "MyVPCInstanceSecGrpId",
+    "ParameterValue": "sg-0cf84768"
+  },
+  {
+    "ParameterKey": "VPCPeerInstanceSecGrpId",
+    "ParameterValue": "sg-c8f847ac"
+  }
+]

@@ -1,0 +1,118 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+
+  "Description": "AutoScaling MultiAZ example with auto DNS CNAMEs",
+
+  "Parameters": {
+    "SiteName": {
+      "Type": "String",
+      "AllowedPattern": "^\\w+\\.awstraining\\.realestate\\.com\\.au$",
+      "ConstraintDescription": "Must be something.awstraining.realestate.com.au",
+      "Description": "The name of your nifty website, something.awstraining.realestate.com.au"
+    },
+    "ZoneName": {
+      "Description": "DNS zone where the site will be registered. Must match the suffix of SiteName, and must be fully-qualified, terminating with a dot",
+      "Type": "String",
+      "Default": "awstraining.realestate.com.au."
+    }
+  },
+
+  "Mappings": {
+    "AWSRegion2AMI": {
+      "us-east-1":      { "AMI": "ami-81a768e8" },
+      "us-west-1":      { "AMI": "ami-b18ed2f4" },
+      "us-west-2":      { "AMI": "ami-feff72ce" },
+      "eu-west-1":      { "AMI": "ami-998bb9ed" },
+      "sa-east-1":      { "AMI": "ami-a239e6bf" },
+      "ap-southeast-1": { "AMI": "ami-5e5a200c" },
+      "ap-southeast-2": { "AMI": "ami-bd990e87" },
+      "ap-northeast-1": { "AMI": "ami-7671c577" }
+    }
+  },
+
+  "Resources": {
+    "WebServer": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "ImageId": {
+          "Fn::FindInMap": [ "AWSRegion2AMI", { "Ref": "AWS::Region" }, "AMI" ]
+        },
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "yum install -y httpd\n",
+                "cat > /var/www/html/index.html<<EoHTML\n",
+                "<html><head><title>Hello, world!</title></head>\n",
+                "<body><h1>Hello world!</h1>\n",
+                "<p>This is my groovy example website. Is it not nifty?</p>\n",
+                "<p>My website name is ", { "Ref": "SiteName" }, "</p>\n",
+                "EoHTML\n",
+                "service httpd start\n",
+                "chkconfig httpd on\n"
+              ]
+            ]
+          }
+        },
+        "SecurityGroups": [ { "Ref": "InstanceSecurityGroup" } ],
+        "InstanceType": "m1.small",
+        "Monitoring": "true"
+      }
+    },
+
+    "ElasticLoadBalancer": {
+      "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+      "Properties": {
+        "AvailabilityZones": { "Fn::GetAZs": "" },
+        "CrossZone": "true",
+        "Listeners": [
+          {
+            "LoadBalancerPort": "80",
+            "InstancePort": "80",
+            "Protocol": "HTTP"
+          }
+        ],
+        "HealthCheck": {
+          "Target": "HTTP:80/",
+          "HealthyThreshold": "2",
+          "UnhealthyThreshold": "3",
+          "Interval": "30",
+          "Timeout": "5"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": { "Ref": "AWS::StackName" }
+          }
+        ],
+        "Instances": [
+          { "Ref": "WebServer" }
+        ]
+      }
+    },
+
+    "InstanceSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Enable HTTP",
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": "80",
+            "ToPort": "80",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ]
+      }
+    }
+  },
+
+  "Outputs": {
+    "URL": {
+      "Description": "The URL of the website",
+      "Value":  { "Fn::Join": [ "", [ "http://", { "Fn::GetAtt": [ "ElasticLoadBalancer", "DNSName" ]}]]}
+    }
+  }
+}

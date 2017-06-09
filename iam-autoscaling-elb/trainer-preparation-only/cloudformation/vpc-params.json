@@ -1,0 +1,98 @@
+[
+  {
+    "ParameterKey": "AvailabilityZone1",
+    "ParameterValue": "ap-southeast-2a"
+  },
+  {
+    "ParameterKey": "AvailabilityZone2",
+    "ParameterValue": "ap-southeast-2b"
+  },
+  {
+    "ParameterKey": "AvailabilityZone3",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "DomainName",
+    "ParameterValue": "vpc.internal"
+  },
+  {
+    "ParameterKey": "EnableDirectConnectSupport",
+    "ParameterValue": "false"
+  },
+  {
+    "ParameterKey": "EnableHttp",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "EnableMelbourneSsh",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "EqxDnsServer",
+    "ParameterValue": "172.25.63.100,172.26.63.100"
+  },
+  {
+    "ParameterKey": "MelbourneOfficeIp",
+    "ParameterValue": "203.17.253.249/32"
+  },
+  {
+    "ParameterKey": "MelbourneVpnIp",
+    "ParameterValue": "203.13.23.30/32"
+  },
+  {
+    "ParameterKey": "NtpServers",
+    "ParameterValue": "52.63.116.0,52.192.94.147,52.33.167.59"
+  },
+  {
+    "ParameterKey": "SubnetPrivate1CidrBlock",
+    "ParameterValue": "10.0.3.0/24"
+  },
+  {
+    "ParameterKey": "SubnetPrivate2CidrBlock",
+    "ParameterValue": "10.0.4.0/24"
+  },
+  {
+    "ParameterKey": "SubnetPrivate3CidrBlock",
+    "ParameterValue": "10.0.5.0/24"
+  },
+  {
+    "ParameterKey": "SubnetPublic1CidrBlock",
+    "ParameterValue": "10.0.0.0/24"
+  },
+  {
+    "ParameterKey": "SubnetPublic2CidrBlock",
+    "ParameterValue": "10.0.1.0/24"
+  },
+  {
+    "ParameterKey": "SubnetPublic3CidrBlock",
+    "ParameterValue": "10.0.2.0/24"
+  },
+  {
+    "ParameterKey": "SubnetRds1CidrBlock",
+    "ParameterValue": "10.0.9.0/24"
+  },
+  {
+    "ParameterKey": "SubnetRds2CidrBlock",
+    "ParameterValue": "10.0.10.0/24"
+  },
+  {
+    "ParameterKey": "SubnetRds3CidrBlock",
+    "ParameterValue": "10.0.11.0/24"
+  },
+  {
+    "ParameterKey": "SubnetServices1CidrBlock",
+    "ParameterValue": "10.0.6.0/24"
+  },
+  {
+    "ParameterKey": "SubnetServices2CidrBlock",
+    "ParameterValue": "10.0.7.0/24"
+  },
+  {
+    "ParameterKey": "SubnetServices3CidrBlock",
+    "ParameterValue": "10.0.8.0/24"
+  },
+  {
+    "ParameterKey": "VpcCidrBlock",
+    "ParameterValue": "10.0.0.0/16"
+  }
+]

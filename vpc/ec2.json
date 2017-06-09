@@ -1,0 +1,84 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "An EC2 Instance with Apache",
+    "Parameters": {
+        "VpcId" : {
+            "Description" : "The VPC we are to launch our instance in",
+            "Type" : "AWS::EC2::VPC::Id"
+        },
+        "SubnetId": {
+            "Description": "The Id of the subnet the instance is going to be launched to",
+            "Type": "AWS::EC2::Subnet::Id"
+        }
+    },
+    "Resources": {
+        "Instance": {
+            "Type" : "AWS::EC2::Instance",
+            "Properties" : {
+                "ImageId" : "ami-28cff44b",
+                "InstanceType" : "t2.micro",
+                "NetworkInterfaces": [ {
+                    "AssociatePublicIpAddress": "true",
+                    "DeviceIndex": "0",
+                    "GroupSet": [{ "Ref" : "SecurityGroup" }],
+                    "SubnetId": { "Ref" : "SubnetId" }
+                }],
+                "Tags" : [
+                    {
+                        "Key" : "Name",
+                        "Value" : { "Ref" : "AWS::StackName" }
+                    }
+                ],
+                "UserData" : {
+                    "Fn::Base64" : {
+                        "Fn::Join" : ["",
+                            [
+                                "#!/bin/bash \n",
+                                "set -xeuo pipefail\n",
+                                "yum -y install httpd\n",
+                                "echo ", { "Ref" : "AWS::StackName" }, " > /var/www/html/index.html\n",
+                                "chmod 644 /var/www/html/index.html\n",
+                                "service httpd start"
+                            ]
+                        ]
+                    }
+                }
+            }
+        },
+        "SecurityGroup" : {
+            "Type" : "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "HTTP and ICMP",
+                "VpcId": { "Ref": "VpcId" },
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": "-1",
+                        "IpProtocol": "icmp",
+                        "ToPort": "-1"
+                    },
+                    {
+                        "CidrIp" : "0.0.0.0/0",
+                        "FromPort": "80",
+                        "IpProtocol": "tcp",
+                        "ToPort": "80"
+                    }
+                ]
+            }
+        }
+    },
+    "Outputs": {
+        "InstanceId": {
+            "Description": "The Id of the created instance",
+            "Value": { "Ref": "Instance" }
+        },
+        "AvailabilityZone": {
+            "Description": "The availability zone the instance was launched into",
+            "Value": { "Fn::GetAtt": [ "Instance", "AvailabilityZone" ] }
+        },
+        "PublicDnsName": {
+            "Description": "The public DNS name assigned to the instance",
+            "Value": { "Fn::GetAtt": [ "Instance", "PublicDnsName" ] }
+        }
+    }
+}

@@ -1,0 +1,30 @@
+[
+  {
+    "ParameterKey":   "TwitterConsumerKey",
+    "ParameterValue": "<TWITTER_CONSUMER_KEY>"
+  },
+  {
+    "ParameterKey":   "TwitterConsumerSecret",
+    "ParameterValue": "<TWITTER_CONSUMER_SECRET>"
+  },
+  {
+    "ParameterKey":   "TwitterAccessToken",
+    "ParameterValue": "<TWITTER_ACCESS_TOKEN>"
+  },
+  {
+    "ParameterKey":   "TwitterAccessTokenSecret",
+    "ParameterValue": "<TWITTER_ACCESS_TOKEN_SECRET>"
+  },
+  {
+    "ParameterKey":   "VpcId",
+    "ParameterValue": "vpc-cad8d0a8"
+  },
+  {
+    "ParameterKey":   "SSHKeyPair",
+    "ParameterValue": "<YOUR-SSH-KEYPAIR>"
+  },
+  {
+    "ParameterKey":   "DNSDomain",
+    "ParameterValue": "awstraining.realestate.com.au."
+  }
+]

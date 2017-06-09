@@ -1,0 +1,188 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  VpcId:
+    Description: VPC where we deploy the app
+    Type: AWS::EC2::VPC::Id
+    Default: "vpc-3924405d"
+
+  ElbSubnets:
+    Description: Public subnets where the Load Balancer is deployed
+    Type: List<AWS::EC2::Subnet::Id>
+    Default: "subnet-ac3b18c8, subnet-e0421496"
+
+  InstancesSubnets:
+    Description: Private subnets where the instances are deployed
+    Type: List<AWS::EC2::Subnet::Id>
+    Default: "subnet-f4441282, subnet-ac3a19c8"
+
+Resources:
+  loadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group allowing HTTP from anywhere
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+      - FromPort: 80
+        ToPort: 80
+        IpProtocol: tcp
+        CidrIp: 0.0.0.0/0
+
+  loadBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Subnets: !Ref ElbSubnets
+      SecurityGroups:
+      - Ref: loadBalancerSecurityGroup
+      Listeners:
+      - Protocol: HTTP
+        LoadBalancerPort: 80
+        InstancePort: 80
+      HealthCheck:
+        Target: HTTP:80/
+        HealthyThreshold: 2
+        UnhealthyThreshold: 4
+        Interval: 10
+        Timeout: 8
+      CrossZone: true
+
+  instancesSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group Allowing HTTP from the ELB
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+      - FromPort: 80
+        ToPort: 80
+        IpProtocol: tcp
+        SourceSecurityGroupId:
+          Ref: loadBalancerSecurityGroup
+
+  iamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: "/application/"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+      - PolicyName: uselessPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action: sqs:GetQueueAttributes
+            Resource: "arn:aws:sqs:us-east-2:123456789012:queue1"
+
+  iamInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+      - Ref: iamRole
+
+  autoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      HealthCheckGracePeriod: 300
+      HealthCheckType: ELB
+      LaunchConfigurationName:
+        Ref: launchConfiguration
+      LoadBalancerNames:
+      - Ref: loadBalancer
+      MinSize: 1
+      MaxSize: 2
+      DesiredCapacity: 1
+      VPCZoneIdentifier: !Ref InstancesSubnets
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+          PropagateAtLaunch: true
+
+  launchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      IamInstanceProfile:
+        Ref: iamInstanceProfile
+      ImageId: ami-4cbfba2f
+      AssociatePublicIpAddress: false
+      InstanceType: t2.nano
+      SecurityGroups:
+      - Ref: instancesSecurityGroup
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash -eu
+
+          # Trickery to show the logs in the console output
+          test -w /dev/console || sleep 5
+          exec > >(tee /dev/console) 2>&1
+
+          # We make a working directory
+          mkdir -p /home/ubuntu/web
+          cd /home/ubuntu/web
+
+          # We write index.html
+          cat > index.html << EoHTML
+            <html><head><title>Hello</title></head>
+            <body><h1>Hello!</h1>
+            <p><a href=s3.html>Click here</a> to go to the page with content coming from S3.<p>
+            <p>If you want to put load on this instance, hit
+             <a href=load.php>the load generation page</a>. It will chew CPU for about 10 seconds.</p>
+          EoHTML
+
+          # We write load.php
+          cat > load.php << EoPHP
+            <p>Generating load ... </p>
+            <?php for (\$i=1; \$i<100000; \$i++) { for (\$j=1;\$j<10000; \$j++) { \$foo=1; }} ?>
+            <p>Load generated, reload for more load!</p>
+          EoPHP
+
+          # We try to write s3.html coming from S3 every 5 seconds
+          nohup sh -c 'while true; do
+                         echo $(aws s3 cp s3://rea-training-stuff/s3.html - 2>&1) > s3.html
+                         sleep 5
+                       done' &
+
+          # We start our app using Docker with our files mounted inside
+          docker run -v $PWD:/var/www/html -d -p 80:80 php:7.0-apache
+
+  scheduledActionUp:
+    Type: AWS::AutoScaling::ScheduledAction
+    Properties:
+      AutoScalingGroupName:
+        Ref: autoScalingGroup
+      DesiredCapacity: 2
+      MaxSize: 2
+      MinSize: 1
+      Recurrence: 0 23 * * 0-4
+
+  scheduledActionDown:
+    Type: AWS::AutoScaling::ScheduledAction
+    Properties:
+      AutoScalingGroupName:
+        Ref: autoScalingGroup
+      DesiredCapacity: 0
+      MaxSize: 0
+      MinSize: 0
+      Recurrence: 0 12 * * *
+
+
+Outputs:
+  LoadBalancerAddress:
+    Value:
+      Fn::GetAtt:
+      - loadBalancer
+      - DNSName
+  IamRoleArn:
+    Value:
+      Fn::GetAtt:
+      - iamRole
+      - Arn

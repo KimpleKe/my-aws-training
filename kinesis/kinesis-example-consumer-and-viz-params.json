@@ -1,0 +1,14 @@
+[
+  {
+    "ParameterKey":   "VpcId",
+    "ParameterValue": "vpc-cad8d0a8"
+  },
+  {
+    "ParameterKey":   "SSHKeyPair",
+    "ParameterValue": "cmp-training-ap-southeast-2"
+  },
+  {
+    "ParameterKey":   "DNSDomain",
+    "ParameterValue": "awstraining.realestate.com.au."
+  }
+]

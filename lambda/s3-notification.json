@@ -1,0 +1,21 @@
+{
+    "LambdaFunctionConfigurations": [
+        {
+            "Filter": {
+                "Key": {
+                    "FilterRules": [
+                        {
+                            "Name": "Prefix", 
+                            "Value": "images/"
+                        }
+                    ]
+                }
+            }, 
+            "LambdaFunctionArn": "$ARN", 
+            "Events": [
+                "s3:ObjectCreated:*"
+            ]
+        }
+    ]
+}
+

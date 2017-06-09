@@ -1,0 +1,179 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Lambda function behind an API Gateway based on Swagger",
+
+  "Parameters": {
+    "SourceBucket": {
+      "Type": "String",
+      "Description": "The S3 bucket (must be in the same region as the Lambda function) where the source zipfile is located"
+    }
+  },
+
+  "Resources": {
+
+    "MyAPI": {
+      "Type": "AWS::ApiGateway::RestApi",
+      "Properties": {
+        "Name": { "Fn::Join": [ " ", ["My API", {"Ref": "SourceBucket"}]]},
+        "FailOnWarnings": true,
+        "Body": {
+          "swagger": "2.0",
+          "info": {
+            "version": "2016-08-17T18:08:34Z",
+            "title": "My API"
+          },
+          "basePath": "/LATEST",
+          "schemes": ["https"],
+          "paths": {
+            "/image": {
+              "get": {
+                "parameters": [
+              	  {
+                    "name" : "width",
+                    "in" : "query",
+                    "required" : true,
+                    "type" : "string"
+                  },
+              	  {
+                    "name" : "height",
+                    "in" : "query",
+                    "required" : true,
+                    "type" : "string"
+                  },
+              	  {
+                    "name" : "image",
+                    "in" : "query",
+                    "required" : true,
+                    "type" : "string"
+                  }
+                ],
+                "produces": ["application/json"],
+                "responses": {
+                  "200": {
+                    "description": "200 success"
+                  },
+                  "400": {
+                    "description": "400 error"
+                  }
+                },
+                "x-amazon-apigateway-integration": {
+                  "requestTemplates": {
+                    "application/json": "{\"width\":  \"$util.escapeJavaScript($input.params('width')).replaceAll(\"\\\\'\", \"'\")\",                                             \"height\": \"$util.escapeJavaScript($input.params('height')).replaceAll(\"\\\\'\", \"'\")\",                                            \"image\":  \"$util.escapeJavaScript($input.params('image')).replaceAll(\"\\\\'\", \"'\")\"  }"
+                  },
+                  "uri": {"Fn::Join": ["",
+                    ["arn:aws:apigateway:", {"Ref": "AWS::Region"}, ":lambda:path/2015-03-31/functions/", {"Fn::ImportValue": { "Fn::Join": [ "-", [ "ImageProcessorLambda", { "Ref": "SourceBucket" } ] ] }}, "/invocations"]
+                  ]},
+                  "responses": {
+                    ".*:4\\d{2}.*": {
+                      "statusCode": "400",
+                      "responseTemplates": {
+                        "application/json": "$input.path(\"$\").errorMessage"
+                      }
+                    },
+                   ".*:5\\d{2}.*": {
+                      "statusCode": "500"
+                    },
+                    "default": {
+                      "statusCode": "200",
+                      "responseTemplates": {
+                        "application/json": "$input.path(\"$\").errorMessage"
+                      }
+                    }
+                  },
+                  "httpMethod": "POST",
+		              "passthroughBehavior": "never",
+                  "type": "aws"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "LambdaPermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:invokeFunction",
+        "FunctionName": {"Fn::ImportValue": { "Fn::Join": [ "-", [ "ImageProcessorLambda", { "Ref": "SourceBucket" } ] ] }},
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {"Fn::Join": ["",
+          ["arn:aws:execute-api:", {"Ref": "AWS::Region"}, ":", {"Ref": "AWS::AccountId"}, ":", {"Ref": "MyAPI"}, "/*"]
+        ]}
+      }
+    },
+
+    "ApiGatewayCloudWatchLogsRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [{
+            "Effect": "Allow",
+            "Principal": { "Service": ["apigateway.amazonaws.com"] },
+            "Action": ["sts:AssumeRole"]
+          }]
+        },
+        "Policies": [{
+          "PolicyName": "ApiGatewayLogsPolicy",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [{
+              "Effect": "Allow",
+              "Action": [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:DescribeLogGroups",
+                "logs:DescribeLogStreams",
+                "logs:PutLogEvents",
+                "logs:GetLogEvents",
+                "logs:FilterLogEvents"
+              ],
+              "Resource": "*"
+            }]
+          }
+        }]
+      }
+    },
+
+    "ApiGatewayAccount": {
+      "Type": "AWS::ApiGateway::Account",
+      "Properties": {
+        "CloudWatchRoleArn": {"Fn::GetAtt": ["ApiGatewayCloudWatchLogsRole", "Arn"] }
+      }
+    },
+
+    "ApiStage": {
+      "DependsOn": ["ApiGatewayAccount"],
+      "Type": "AWS::ApiGateway::Stage",
+      "Properties": {
+        "DeploymentId": {"Ref": "ApiDeployment"},
+        "MethodSettings": [{
+          "DataTraceEnabled": true,
+          "HttpMethod": "*",
+          "LoggingLevel": "INFO",
+          "ResourcePath": "/*"
+        }],
+        "RestApiId": {"Ref": "MyAPI"},
+        "StageName": "LATEST"
+      }
+    },
+
+    "ApiDeployment": {
+      "Type": "AWS::ApiGateway::Deployment",
+      "Properties": {
+        "RestApiId": {"Ref": "MyAPI"},
+        "StageName": "DummyStage"
+      }
+    }
+  },
+  "Outputs": {
+    "RootUrl": {
+      "Description": "Root URL of the API gateway",
+      "Value": {"Fn::Join": ["",
+        ["https://", {"Ref": "MyAPI"}, ".execute-api.", {"Ref": "AWS::Region"}, ".amazonaws.com", "/LATEST/image"]
+      ]}
+    }
+  }
+
+}

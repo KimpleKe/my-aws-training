@@ -1,0 +1,165 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Creates a DynamoDB table and a couple of small Lambda functions to interact with it",
+
+  "Resources": {
+    "ExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Action": [ "sts:AssumeRole" ],
+              "Effect": "Allow",
+              "Principal": { "Service": [ "lambda.amazonaws.com" ] }
+            }
+          ]
+        },
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyName": "PermitLambda",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "PermitDynamoStuff",
+                  "Action": [
+                    "dynamodb:DeleteItem",
+                    "dynamodb:GetItem",
+                    "dynamodb:PutItem",
+                    "dynamodb:Query",
+                    "dynamodb:Scan",
+                    "dynamodb:UpdateItem"
+                  ],
+                  "Effect": "Allow",
+                  "Resource": "*"
+                },
+                {
+                  "Sid": "PermitWriteLogs",
+                  "Resource": "*",
+                  "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Effect": "Allow"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+
+    "IncrementCounter": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "ZipFile": {
+            "Fn::Join": [
+              "",
+              [
+                "console.log('Loading function');\n",
+                "var doc = require('dynamodb-doc');\n",
+                "var dynamo = new doc.DynamoDB();\n",
+                "exports.handler = function(event, context) {\n",
+                "    var params = {\n",
+                "        Key: {\n",
+                "            CounterName: 'MainCounter'\n",
+                "        },\n",
+                "        TableName: '", { "Ref": "CounterTable" },"',\n",
+                "        AttributeUpdates: {\n",
+                "            CounterValue: {\n",
+                "                Action: 'ADD',\n",
+                "                Value: 1\n",
+                "            }\n",
+                "        },\n",
+                "        ReturnValues: 'UPDATED_NEW'\n",
+                "    }\n",
+                "    dynamo.updateItem(params, function(err, data) {\n",
+                "        if (err) {\n",
+                "            console.log(err, err.stack);\n",
+                "            context.fail('Could not thing');\n",
+                "        } else {\n",
+                "            context.succeed(data);\n",
+                "        }\n",
+                "    });\n",
+                "};"
+              ]
+            ]
+          }
+        },
+        "Description": "Run when the API is PUT",
+        "Handler": "index.handler",
+        "MemorySize": "128",
+        "Role": { "Fn::GetAtt": [ "ExecutionRole", "Arn" ] },
+        "Runtime": "nodejs",
+        "Timeout": "30"
+      }
+    },
+
+    "GetCounter": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "ZipFile": {
+            "Fn::Join": [
+              "",
+              [
+                "console.log('Loading function');\n",
+                "var doc = require('dynamodb-doc');\n",
+                "var dynamo = new doc.DynamoDB();\n",
+                "exports.handler = function(event, context) {\n",
+                "    var params = {\n",
+                "        Key: {\n",
+                "            CounterName: 'MainCounter'\n",
+                "        },\n",
+                "        TableName: '", { "Ref": "CounterTable" },"'\n",
+                "    }\n",
+                "    dynamo.getItem(params, function(err, data) {\n",
+                "        if (err) {\n",
+                "            console.log(err, err.stack);\n",
+                "            context.fail('Could not thing');\n",
+                "        } else {\n",
+                "            context.succeed(data);\n",
+                "        }\n",
+                "    });\n",
+                "};"
+              ]
+            ]
+          }
+        },
+        "Description": "Run when the API is GET",
+        "Handler": "index.handler",
+        "MemorySize": "128",
+        "Role": { "Fn::GetAtt": [ "ExecutionRole", "Arn" ] },
+        "Runtime": "nodejs",
+        "Timeout": "30"
+      }
+    },
+
+    "CounterTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "CounterName",
+            "AttributeType": "S"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "CounterName",
+            "KeyType": "HASH"
+          }
+        ],
+        "ProvisionedThroughput": {
+          "ReadCapacityUnits": 1,
+          "WriteCapacityUnits": 1
+        }
+      }
+    }
+  }
+}

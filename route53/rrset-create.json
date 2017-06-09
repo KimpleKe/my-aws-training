@@ -1,0 +1,34 @@
+{
+  "Comment": "Create a failover changeset where S3 serves a sorry page when an ELB is unavailable",
+  "Changes": [
+    {
+      "Action": "CREATE",
+      "ResourceRecordSet": {
+        "Name": "<YOUR-SITE-NAME>.awstraining.realestate.com.au",
+        "Type": "A",
+        "SetIdentifier": "primary traffic to ELB",
+        "Failover": "PRIMARY",
+        "AliasTarget": {
+          "HostedZoneId": "<YOUR-ZONE-ID>",
+          "DNSName": "<YOUR-ELB-HOSTNAME>",
+          "EvaluateTargetHealth": true
+        },
+        "HealthCheckId": "<YOUR-HEALTH-CHECK-ID>"
+      }
+    },
+    {
+      "Action": "CREATE",
+      "ResourceRecordSet": {
+        "Name": "<YOUR-SITE-NAME>.awstraining.realestate.com.au",
+        "Type": "A",
+        "SetIdentifier": "secondary failover traffic to S3",
+        "Failover": "SECONDARY",
+        "AliasTarget": {
+          "HostedZoneId": "<S3-ZONE-ID>",
+          "DNSName": "s3-website-<region>.amazonaws.com",
+          "EvaluateTargetHealth": false
+        }
+      }
+    }
+  ]
+}

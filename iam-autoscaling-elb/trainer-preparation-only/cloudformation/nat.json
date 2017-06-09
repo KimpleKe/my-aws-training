@@ -1,0 +1,104 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Two NAT gateways (one per AZ), gets parameters from VPC stack with Fn::ImportValue (https://git.realestate.com.au/aws-infrastructure/rea-vpc)",
+    "Parameters" : {
+        "VpcName" : {
+            "Type" : "String",
+            "Description" : "The name of the VPC stack, used to build out parameter imports"
+        },
+        "EnableAz3" : {
+            "Type" : "String",
+            "Description" : "Set to true if you are using the 3rd AZ and a NAT gateway will be created there",
+            "Default" : "false"
+        }
+    },
+    "Conditions": {
+        "YesAz3": { "Fn::Equals" : [ { "Ref" : "EnableAz3" }, "true" ] }
+    },
+    "Resources": {
+        "NatEip1" : {
+            "Type" : "AWS::EC2::EIP",
+            "Properties" : {
+                "Domain" : "vpc"
+            }
+        },
+        "NatEip2" : {
+            "Type" : "AWS::EC2::EIP",
+            "Properties" : {
+                "Domain" : "vpc"
+            }
+        },
+        "NatEip3" : {
+            "Type" : "AWS::EC2::EIP",
+            "Condition" : "YesAz3",
+            "Properties" : {
+                "Domain" : "vpc"
+            }
+        },
+        "NatGw1" : {
+            "Type" : "AWS::EC2::NatGateway",
+            "Properties" : {
+                "AllocationId" : { "Fn::GetAtt" : [ "NatEip1", "AllocationId" ] },
+                "SubnetId" : { "Fn::ImportValue" : { "Fn::Join" : [ "", [ { "Ref" : "VpcName" }, "-SUBNETPUBLIC1" ] ] } }
+            }
+        },
+        "NatGw2" : {
+            "Type" : "AWS::EC2::NatGateway",
+            "Properties" : {
+                "AllocationId" : { "Fn::GetAtt" : [ "NatEip2", "AllocationId" ] },
+                "SubnetId" : { "Fn::ImportValue" : { "Fn::Join" : [ "", [ { "Ref" : "VpcName" }, "-SUBNETPUBLIC2" ] ] } }
+            }
+        },
+        "NatGw3" : {
+            "Type" : "AWS::EC2::NatGateway",
+            "Condition" : "YesAz3",
+            "Properties" : {
+                "AllocationId" : { "Fn::GetAtt" : [ "NatEip3", "AllocationId" ] },
+                "SubnetId" : { "Fn::ImportValue" : { "Fn::Join" : [ "", [ { "Ref" : "VpcName" }, "-SUBNETPUBLIC3" ] ] } }
+            }
+        },
+        "RoutePrivate1" : {
+            "Type" : "AWS::EC2::Route",
+            "Properties" : {
+                "RouteTableId" : { "Fn::ImportValue" : { "Fn::Join" : [ "", [ { "Ref" : "VpcName" }, "-RTBPRIVATE1" ] ] } },
+                "DestinationCidrBlock" : "0.0.0.0/0",
+                "NatGatewayId" : { "Ref" : "NatGw1" }
+            }
+        },
+        "RoutePrivate2" : {
+            "Type" : "AWS::EC2::Route",
+            "Properties" : {
+                "RouteTableId" : { "Fn::ImportValue" : { "Fn::Join" : [ "", [ { "Ref" : "VpcName" }, "-RTBPRIVATE2" ] ] } },
+                "DestinationCidrBlock" : "0.0.0.0/0",
+                "NatGatewayId" : { "Ref" : "NatGw2" }
+            }
+        },
+        "RoutePrivate3" : {
+            "Type" : "AWS::EC2::Route",
+            "Condition" : "YesAz3",
+            "Properties" : {
+                "RouteTableId" : { "Fn::ImportValue" : { "Fn::Join" : [ "", [ { "Ref" : "VpcName" }, "-RTBPRIVATE3" ] ] } },
+                "DestinationCidrBlock" : "0.0.0.0/0",
+                "NatGatewayId" : { "Ref" : "NatGw3" }
+            }
+        }
+    },
+    "Outputs": {
+        "NatEip1" : {
+            "Description": "The Elastic IP of the 1st NAT Gateway",
+            "Export": { "Name": { "Fn::Join": [ "", [ { "Ref": "VpcName" }, "-NATEIP1" ] ] } },
+            "Value": { "Ref": "NatEip1" }
+        },
+        "NatEip2" : {
+            "Description": "The Elastic IP of the 2nd NAT Gateway",
+            "Export": { "Name": { "Fn::Join": [ "", [ { "Ref": "VpcName" }, "-NATEIP2" ] ] } },
+            "Value": { "Ref": "NatEip2" }
+        },
+        "NatEip3" : {
+            "Condition" : "YesAz3",
+            "Description": "The Elastic IP of the 3rd NAT Gateway",
+            "Export": { "Name": { "Fn::Join": [ "", [ { "Ref": "VpcName" }, "-NATEIP3" ] ] } },
+            "Value": { "Ref": "NatEip3" }
+        }
+    }
+}

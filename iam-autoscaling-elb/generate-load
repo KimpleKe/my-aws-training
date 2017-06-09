@@ -1,0 +1,41 @@
+#!/bin/bash
+#
+# Generate some load on an autoscaling group via its ELB.
+# Requires that the URL is passed on the command-line, and that
+# the instances have a 'load.php' available in the root of the
+# web content which generates a small amount of CPU load
+#
+
+if [ $# -ne 1 ]; then
+    echo "usage: $0 <URL>"
+    exit 1
+fi
+
+case "$1" in
+    http*)  :   ;;
+    *)      echo "Must pass an http or https URL as the sole argument"
+            exit 1
+            ;;
+esac
+
+URL="$1/load.php"
+
+if type -P curl >/dev/null 2>&1; then
+    GET="curl --fail -I -o /dev/null "
+elif type -P wget >/dev/null 2>&1; then
+    GET="wget -O /dev/null "
+else
+    echo "Must have curl or wget available on your \$PATH"
+    exit 1
+fi
+
+echo "Generating load via $URL -- use Ctrl-C to stop"
+
+while true; do
+    RES=$( $GET $URL 2>/dev/null )
+    if [ $? -ne 0 ]; then
+        echo "ERROR fetching $URL: $RES"
+    else
+        echo -n .
+    fi
+done

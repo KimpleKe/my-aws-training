@@ -1,0 +1,26 @@
+digraph contexts {
+    rankdir="BT"
+    bgcolor="transparent"
+    node [fontname="Helvetica"]
+    edge [fontname="Helvetica"]
+
+    master_key [label="Master Key" shape=doubleoctagon]
+    role [label="IAM Role"]
+    grant [label="KMS Grant\ncan decrypt if\nencryption_context == 'foo'" style=filled shape=note]
+    ec2 [label="EC2 Instance" shape=box3d style=filled color=black fillcolor=orange]
+    user [label="User or Assumed Role" shape=septagon style=filled color=black fillcolor=pink]
+    cipher_a [label="Ciphertext A\nencryption_context = 'foo'" color=black fillcolor=orange style=filled shape=note]
+    cipher_b [label="Ciphertext A\nencryption_context = 'bar'" color=black fillcolor=lightslateblue style=filled shape=note]
+
+    master_key -> grant [label="has a"]
+    grant -> role
+    role -> ec2 [dir=none]
+    role -> user [dir=none]
+
+    cipher_a -> master_key [label="encrypted with" color=orange fontcolor=orange]
+    cipher_b -> master_key [label="encrypted with" color=lightslateblue fontcolor=lightslateblue]
+
+    cipher_a -> role [label="can decrypt" color=green3 fontcolor=green3]
+    cipher_b -> role [label="cannot decrypt" color=red fontcolor=red]
+
+}

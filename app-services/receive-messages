@@ -1,0 +1,40 @@
+#!/bin/bash
+#
+# Receive messages from an SQS queue specified by its URL
+#
+
+if [ $# -ne 1 ]; then
+    echo "usage: $0 <queue-url>"
+    exit 1
+fi
+
+case $1 in
+    https://*)  :   ;;
+    *)  echo "ERROR: Specify a queue URL of the form https://..."
+        exit 1
+        ;;
+esac
+
+if [ -z "$AWS_DEFAULT_REGION" ]; then
+    echo "You must set \$AWS_DEFAULT_REGION first"
+    exit 1
+fi
+
+URL=$1
+TMPFILE=/tmp/msg-tmp.$$
+
+echo "Polling for messages ... Ctrl-C to interrupt"
+
+while true; do
+    aws sqs receive-message --queue-url $URL --output text > $TMPFILE
+    if [ -s $TMPFILE ]; then
+        SUBJECT=$( grep '"Subject"' $TMPFILE | sed -e 's/"//g' -e 's/,//g' | xargs echo | cut -f3- -d" " )
+        MSG=$( grep '"Message"' $TMPFILE | sed -e 's/"//g' -e 's/,//g' | xargs echo | cut -f3- -d" " )
+        RECEIPT=$( tail -n 1 $TMPFILE | awk '{ print $4 }' )
+
+        echo "Subject: $SUBJECT"
+        echo "Message: $MSG"
+        aws sqs delete-message --queue-url $URL --receipt-handle $RECEIPT
+    fi
+    sleep 1
+done
